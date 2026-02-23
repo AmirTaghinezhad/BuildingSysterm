@@ -1,0 +1,24 @@
+{
+	"FileVersion": 3,
+	"Version": 1,
+	"VersionName": "1.0",
+	"FriendlyName": "BaseBuilding",
+	"Description": "A base building plugin, optimized, designer friendly, and completely modular",
+	"Category": "Other",
+	"CreatedBy": "Amirtns",
+	"CreatedByURL": "",
+	"DocsURL": "",
+	"MarketplaceURL": "",
+	"SupportURL": "",
+	"CanContainContent": true,
+	"IsBetaVersion": false,
+	"IsExperimentalVersion": false,
+	"Installed": false,
+	"Modules": [
+		{
+			"Name": "BaseBuilding",
+			"Type": "Runtime",
+			"LoadingPhase": "Default"
+		}
+	]
+}
