@@ -55,7 +55,7 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, ReplicatedUsing=OnRep_StructureName)
 	FName StructureName;
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Building")
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, ReplicatedUsing=OnRep_BuildingDataTable, Category="Building")
 	TObjectPtr<UDataTable> BuildingDataTable;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Replicated, Category="Building")
@@ -103,6 +103,8 @@ private:
 
 	UFUNCTION()
 	void OnRep_StructureName();
+	UFUNCTION()
+	void OnRep_BuildingDataTable();
 
 	void ApplyStructureData();
 
