@@ -160,12 +160,6 @@ bool ABuildingBlock::IsLocationOwnedBy(UWorld* World, const FVector& Location, c
 	return Controller && Controller->BuildingOwner == Player;
 }
 
-bool ABuildingBlock::CanPlaceBlockAtLocation(UWorld* World, const FVector& Location)
-{
-	// Overlapping blocks are valid. Oldest-block priority clips the newer block's effective territory.
-	return World != nullptr;
-}
-
 void ABuildingBlock::RecalculateUpkeepRequirements()
 {
 	if (!HasAuthority() || !GetWorld()) return;
