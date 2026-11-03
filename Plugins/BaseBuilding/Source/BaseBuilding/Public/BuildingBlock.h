@@ -5,6 +5,7 @@
 #include "BuildingBlock.generated.h"
 
 class USphereComponent;
+class UStaticMeshComponent;
 class APlayerState;
 class ABLDStructure;
 
@@ -67,6 +68,9 @@ public:
 protected:
 	virtual void BeginPlay() override;
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Building Block")
+	TObjectPtr<UStaticMeshComponent> BlockMesh;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Building Block")
 	TObjectPtr<USphereComponent> TerritorySphere;
