@@ -74,7 +74,7 @@ public:
 	bool IsBuilt() const { return bIsbuilt; }
 
 	// Server-only initialization for a newly placed, replicated structure.
-	void InitializeBuiltStructure(UDataTable* InDataTable, APlayerState* InOwner, ABuildingBlock* InBlock);
+	void InitializeBuiltStructure(UDataTable* InDataTable, APlayerState* InOwner, ABuildingBlock* InBlock);\n\tbool ValidateServerPlacement();
 
 	// Upkeep is derived from the current structure row. A blank upkeep resource falls back to construction resource.
 	bool GetUpkeepRequirement(FName& OutResource, float& OutAmount) const;
