@@ -93,6 +93,7 @@ bool ABLDStructure::ValidateServerPlacement()
 	}
 
 	if (bShouldSnap && !BestTarget) return false;
+	if (BestTarget && BestTarget->GetBuildingOwner() && BestTarget->GetBuildingOwner() != BuildingOwner) return false;
 	return ValidateBuild(BestTarget != nullptr, BestTarget, BestOwnSocket, BestTargetSocket);
 }
 
