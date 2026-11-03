@@ -2,6 +2,7 @@
 
 #include "BLDStructure.h"
 #include "Components/SphereComponent.h"
+#include "Components/StaticMeshComponent.h"
 #include "EngineUtils.h"
 #include "GameFramework/PlayerState.h"
 #include "Net/UnrealNetwork.h"
@@ -16,6 +17,8 @@ ABuildingBlock::ABuildingBlock()
 	SetReplicateMovement(true);
 
 	RootComponent = CreateDefaultSubobject<USceneComponent>(TEXT("Root"));
+	BlockMesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("BlockMesh"));
+	BlockMesh->SetupAttachment(RootComponent);
 	TerritorySphere = CreateDefaultSubobject<USphereComponent>(TEXT("TerritorySphere"));
 	TerritorySphere->SetupAttachment(RootComponent);
 	TerritorySphere->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
@@ -46,6 +49,17 @@ void ABuildingBlock::BeginPlay()
 void ABuildingBlock::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
 	GetWorldTimerManager().ClearTimer(UpkeepTimerHandle);
+	if (HasAuthority() && GetWorld())
+	{
+		for (TActorIterator<ABLDStructure> It(GetWorld()); It; ++It)
+		{
+			ABLDStructure* Structure = *It;
+			if (IsValid(Structure) && Structure->GetOwningBuildingBlock() == this)
+			{
+				Structure->SetOwningBuildingBlock(nullptr);
+			}
+		}
+	}
 	Super::EndPlay(EndPlayReason);
 }
 
