@@ -59,6 +59,13 @@ void ABuildingBlock::EndPlay(const EEndPlayReason::Type EndPlayReason)
 				Structure->SetOwningBuildingBlock(nullptr);
 			}
 		}
+		for (TActorIterator<ABuildingBlock> It(GetWorld()); It; ++It)
+		{
+			ABuildingBlock* OtherBlock = *It;
+			if (!IsValid(OtherBlock) || OtherBlock == this || OtherBlock->IsActorBeingDestroyed()) continue;
+			OtherBlock->ClaimUnassignedStructures();
+			OtherBlock->RecalculateUpkeepRequirements();
+		}
 	}
 	Super::EndPlay(EndPlayReason);
 }
@@ -137,7 +144,7 @@ ABuildingBlock* ABuildingBlock::GetControllingBlockAtLocation(UWorld* World, con
 	for (TActorIterator<ABuildingBlock> It(World); It; ++It)
 	{
 		ABuildingBlock* Candidate = *It;
-		if (!IsValid(Candidate) || !Candidate->IsLocationInsideRadius(Location)) continue;
+		if (!IsValid(Candidate) || Candidate->IsActorBeingDestroyed() || !Candidate->IsLocationInsideRadius(Location)) continue;
 		if (!OldestBlock || Candidate->CreationOrder < OldestBlock->CreationOrder)
 		{
 			OldestBlock = Candidate;
