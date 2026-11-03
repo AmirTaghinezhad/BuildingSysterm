@@ -31,7 +31,7 @@ struct FBuildingInfo : public FTableRowBase
 
 	// Upkeep per in-game day = RequiredAmount * UpkeepPercentage / 100.
 	// If UpkeepResource is None, RequiredResource is used.
-	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category="Upkeep", meta=(ClampMin="0.0"))
+	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category="Upkeep")
 	FName UpkeepResource;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category="Upkeep", meta=(ClampMin="0.0"))
@@ -62,10 +62,8 @@ public:
 protected:
 	virtual void BeginPlay() override;
 	UFUNCTION(BlueprintCallable) void ToggleBuildMode(TSubclassOf<ABLDStructure> Structure);
-	void BuildCycle();
 
 	UFUNCTION(BlueprintCallable) void SpawnBuildGhost(TSubclassOf<ABLDStructure> Structure);
-	void UpdateBuildPreview();
 
 	UFUNCTION(BlueprintCallable) void BuildStructure();
 
