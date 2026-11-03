@@ -131,7 +131,7 @@ void UBLDComponet::ServerBuildStructure_Implementation(TSubclassOf<ABLDStructure
 {
 	if (!GetOwner() || !GetOwner()->HasAuthority() || !StructureClass || !GetWorld()) return;
 	APlayerState* RequestingPlayer = PlayerRefrence ? PlayerRefrence->GetPlayerState() : nullptr;
-	if (!RequestingPlayer) return;
+	if (!RequestingPlayer || !PlayerRefrence || FVector::DistSquared(PlayerRefrence->GetActorLocation(), RequestedTransform.GetLocation()) > FMath::Square(1000.f)) return;
 
 	ABuildingBlock* ControllingBlock = ABuildingBlock::GetControllingBlockAtLocation(GetWorld(), RequestedTransform.GetLocation());
 	// Outside all claims is allowed. Inside a claim, only its controlling block's owner may build.
