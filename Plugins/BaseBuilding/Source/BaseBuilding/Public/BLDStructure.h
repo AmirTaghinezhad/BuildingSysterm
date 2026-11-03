@@ -79,6 +79,8 @@ public:
 	// Upkeep is derived from the current structure row. A blank upkeep resource falls back to construction resource.
 	bool GetUpkeepRequirement(FName& OutResource, float& OutAmount) const;
 	void ApplyUpkeepDecay(float PercentageOfMaxHealth);
+	float GetDecayPercentagePerDay(float FallbackPercentage) const;
+	void SetOwningBuildingBlock(ABuildingBlock* NewBlock);
 	void UpgradeStructure(UDataTable* DataTable);
 
 protected:
