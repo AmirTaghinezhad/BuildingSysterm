@@ -68,6 +68,8 @@ void ABuildingBlock::InitializeBuildingBlock(APlayerState* InOwner, float InRadi
 	if (InRadius > 0.f) TerritoryRadius = InRadius;
 	if (CreationOrder <= 0) CreationOrder = NextCreationOrder++;
 	RefreshTerritoryRadius();
+	ClaimUnassignedStructures();
+	RecalculateUpkeepRequirements();
 	ForceNetUpdate();
 }
 
@@ -76,9 +78,22 @@ void ABuildingBlock::RefreshTerritoryRadius()
 	if (TerritorySphere) TerritorySphere->SetSphereRadius(TerritoryRadius);
 }
 
+void ABuildingBlock::ClaimUnassignedStructures()
+{
+	if (!HasAuthority() || !GetWorld() || !BuildingOwner) return;
+	for (TActorIterator<ABLDStructure> It(GetWorld()); It; ++It)
+	{
+		ABLDStructure* Structure = *It;
+		if (!IsValid(Structure) || !Structure->IsBuilt() || Structure->GetOwningBuildingBlock()) continue;
+		if (Structure->GetBuildingOwner() != BuildingOwner) continue;
+		if (GetControllingBlockAtLocation(GetWorld(), Structure->GetActorLocation()) != this) continue;
+		Structure->SetOwningBuildingBlock(this);
+	}
+}
+
 bool ABuildingBlock::IsLocationInsideRadius(const FVector& Location) const
 {
-	const FVector Delta = Location - GetActorLocation();
+	const FVector2D Delta(Location.X - GetActorLocation().X, Location.Y - GetActorLocation().Y);
 	return Delta.SizeSquared() <= FMath::Square(TerritoryRadius);
 }
 
@@ -203,7 +218,7 @@ void ABuildingBlock::ApplyDecayToStructures()
 
 	for (ABLDStructure* Structure : StructuresToDecay)
 	{
-		Structure->ApplyUpkeepDecay(-1.f);
+		Structure->ApplyUpkeepDecay(Structure->GetDecayPercentagePerDay(DefaultDecayPercentagePerDay));
 	}
 }
 
