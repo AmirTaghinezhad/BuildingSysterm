@@ -19,6 +19,7 @@ public:
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 
 	// Must be called by the server after spawning the block.
+	UFUNCTION(BlueprintCallable, Category="Building Block")
 	void InitializeBuildingBlock(APlayerState* InOwner, float InRadius = -1.f);
 
 	UFUNCTION(BlueprintPure, Category="Building Block")
