@@ -154,6 +154,7 @@ void UBLDComponet::ServerBuildStructure_Implementation(TSubclassOf<ABLDStructure
 	if (!NewStructure) return;
 
 	NewStructure->BuildingDataTable = StructureDataTable;
+	NewStructure->BuildingOwner = RequestingPlayer;
 	NewStructure->BLDComponent = this;
 	if (!NewStructure->ValidateServerPlacement())
 	{
