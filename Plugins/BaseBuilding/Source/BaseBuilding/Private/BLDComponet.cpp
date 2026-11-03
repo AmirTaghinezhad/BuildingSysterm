@@ -1,87 +1,63 @@
-// Fill out your copyright notice in the Description page of Project Settings.
-
-
 #include "BLDComponet.h"
 
 #include "BLDStructure.h"
+#include "BuildingBlock.h"
 #include "GameFramework/Character.h"
+#include "GameFramework/Controller.h"
+#include "GameFramework/PlayerState.h"
 #include "Camera/CameraComponent.h"
 #include "Components/BoxComponent.h"
 #include "Engine/DataTable.h"
-
+#include "Engine/World.h"
+#include "TimerManager.h"
 
 UBLDComponet::UBLDComponet()
 {
-	
 	PrimaryComponentTick.bCanEverTick = true;
-
+	SetIsReplicatedByDefault(true);
 }
-
-
 
 void UBLDComponet::BeginPlay()
 {
 	Super::BeginPlay();
-
 	PlayerRefrence = Cast<ACharacter>(GetOwner());
-	if (!PlayerRefrence) {UE_LOG(LogTemp, Error, TEXT("Player Reference is NULL!"));}
-	
+	if (!PlayerRefrence) UE_LOG(LogTemp, Error, TEXT("Player Reference is NULL!"));
 }
 
-void UBLDComponet::TickComponent(float DeltaTime, ELevelTick TickType,
-                                          FActorComponentTickFunction* ThisTickFunction)
+void UBLDComponet::TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction)
 {
 	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
-
 }
 
 void UBLDComponet::AttemptRotation(float YawOffset)
 {
-	if (BuildGhost)
-	{
-		BuildGhost->RotationOfset(YawOffset);
-
-	}
+	if (BuildGhost) BuildGhost->RotationOfset(YawOffset);
 }
 
 void UBLDComponet::ToggleBuildMode(TSubclassOf<ABLDStructure> Structure)
 {
 	if (!IsBuildMoodOn)
 	{
-		
-			//SpawnBuildGhost(Structure);
-			bDoOnce = false;
-		
+		bDoOnce = false;
 		IsBuildMoodOn = true;
 		InitMainTrace();
 	}
 	else
 	{
-		if (!BuildGhost)
+		if (BuildGhost)
 		{
-			IsBuildMoodOn = false;
-			StopMainTrace();
-			return;
-		}
-		if (BuildGhost->bIsbuilt)
-		{
-			BuildGhost = nullptr;
-		}
-		else
-		{
-			BuildGhost->StopGhost(); //Make a unique timer stop
+			BuildGhost->StopGhost();
 			BuildGhost->Destroy();
 			BuildGhost = nullptr;
 		}
 		IsBuildMoodOn = false;
-		//bDoOnce = true;
+		StopMainTrace();
 	}
 }
 
-
 void UBLDComponet::SpawnBuildGhost(TSubclassOf<ABLDStructure> Structure)
 {
-	if (!IsBuildMoodOn) return;
+	if (!IsBuildMoodOn || !Structure || !GetWorld()) return;
 	if (BuildGhost)
 	{
 		BuildGhost->StopGhost();
@@ -89,127 +65,129 @@ void UBLDComponet::SpawnBuildGhost(TSubclassOf<ABLDStructure> Structure)
 		BuildGhost = nullptr;
 	}
 	StopMainTrace();
+
 	FActorSpawnParameters SpawnParams;
 	SpawnParams.Owner = PlayerRefrence;
-
+	SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
 	BuildGhost = GetWorld()->SpawnActor<ABLDStructure>(Structure, FVector::ZeroVector, FRotator::ZeroRotator, SpawnParams);
-	BuildGhost->BLDComponent = this;
-	BuildGhost->InitGhost();
+	if (BuildGhost)
+	{
+		BuildGhost->BLDComponent = this;
+		BuildGhost->BuildingDataTable = StructureDataTable;
+		BuildGhost->InitGhost();
+	}
 }
 
 void UBLDComponet::MainTrace()
 {
-	//These should neve occur here
-	//if (!IsBuildMoodOn) return;
-	//if (BuildGhost) return;
-	FVector StartLocation = CameraRef->GetComponentLocation() +  CameraRef->GetForwardVector() * 350.0f;
-	FVector EndLocation = CameraRef->GetComponentLocation() +  CameraRef->GetForwardVector() * 600.0f;
+	if (!CameraRef || !GetWorld()) return;
+	const FVector Start = CameraRef->GetComponentLocation() + CameraRef->GetForwardVector() * 350.f;
+	const FVector End = CameraRef->GetComponentLocation() + CameraRef->GetForwardVector() * 600.f;
 	FHitResult HitResult;
-	FCollisionQueryParams CollisionParams;
-	CollisionParams.AddIgnoredActor(GetOwner());
-	bool Hit = GetWorld()->LineTraceSingleByChannel(HitResult, StartLocation, EndLocation, ECC_Visibility, CollisionParams);
-	DrawDebugLine(GetWorld(), StartLocation, EndLocation, FColor::Red,false, 5.0f);
-	if (Hit)
+	FCollisionQueryParams Params;
+	Params.AddIgnoredActor(GetOwner());
+	const bool bHit = GetWorld()->LineTraceSingleByChannel(HitResult, Start, End, ECC_Visibility, Params);
+	DrawDebugLine(GetWorld(), Start, End, FColor::Red, false, 5.f);
+	ABLDStructure* HitStructure = bHit ? Cast<ABLDStructure>(HitResult.GetActor()) : nullptr;
+	if (TargetStructure == HitStructure) return;
+	TargetStructure = HitStructure;
+	if (TargetStructure && TargetStructure->ValidationBox)
 	{
-		if (TargetStructure == Cast<ABLDStructure>(HitResult.GetActor())) return;
-		TargetStructure = nullptr;
-		TargetStructure = Cast<ABLDStructure>(HitResult.GetActor());
-		if (TargetStructure) DrawDebugBox(GetWorld(), TargetStructure->GetActorLocation(), TargetStructure->ValidationBox->GetScaledBoxExtent(),TargetStructure->ValidationBox->GetComponentRotation().Quaternion(), FColor::Red, false, 1.0f);
-		OnTargetStructureUpdate.Broadcast(TargetStructure);
+		DrawDebugBox(GetWorld(), TargetStructure->GetActorLocation(), TargetStructure->ValidationBox->GetScaledBoxExtent(),
+			TargetStructure->ValidationBox->GetComponentRotation().Quaternion(), FColor::Red, false, 1.f);
 	}
-	else
-	{
-		if (TargetStructure != nullptr)
-		{
-			TargetStructure = nullptr;
-			OnTargetStructureUpdate.Broadcast(TargetStructure);
-			
-			
-		}
-	}
+	OnTargetStructureUpdate.Broadcast(TargetStructure);
 }
 
 FVector UBLDComponet::GhostTrace()
 {
-	FVector StartLocation = CameraRef->GetComponentLocation() +  CameraRef->GetForwardVector() * 350.0f;
-	FVector EndLocation = CameraRef->GetComponentLocation() +  CameraRef->GetForwardVector() * 750.0f;
+	if (!CameraRef || !GetWorld()) return FVector::ZeroVector;
+	const FVector Start = CameraRef->GetComponentLocation() + CameraRef->GetForwardVector() * 350.f;
+	const FVector End = CameraRef->GetComponentLocation() + CameraRef->GetForwardVector() * 750.f;
 	FHitResult HitResult;
-	FCollisionQueryParams CollisionParams;
-	CollisionParams.AddIgnoredActor(GetOwner());
-	bool Hit = GetWorld()->LineTraceSingleByChannel(HitResult, StartLocation, EndLocation, ECC_Visibility, CollisionParams);
-	DrawDebugLine(GetWorld(), StartLocation, EndLocation, FColor::Red,false, 5.0f);
-	
-	if (Hit)
-	{
-		FVector HitLocation = HitResult.ImpactPoint;
-		return HitLocation;
-		//UE_LOG(LogTemp, Log, TEXT("BLDStructure: Hit is true, Hit locations is %s"), *HitResult.ImpactNormal.ToString());
-		
-	}
-	else
-	{
-		FVector TraceEnd = (HitResult.TraceEnd);
-		return TraceEnd;
-		//UE_LOG(LogTemp, Log, TEXT("BLDStructure: Hit is false"));
-	}
-	
+	FCollisionQueryParams Params;
+	Params.AddIgnoredActor(GetOwner());
+	const bool bHit = GetWorld()->LineTraceSingleByChannel(HitResult, Start, End, ECC_Visibility, Params);
+	DrawDebugLine(GetWorld(), Start, End, FColor::Red, false, 5.f);
+	return bHit ? HitResult.ImpactPoint : End;
 }
 
 void UBLDComponet::BuildStructure()
 {
-	if (!IsBuildMoodOn || !BuildGhost) return;	
-	if (!BuildGhost->bCanBuild) return;
-	/*
-	FActorSpawnParameters SpawnParams;
-	SpawnParams.Owner = PlayerRefrence;
-	
-	ABLDStructure* SpawnedStructure = GetWorld()->SpawnActor<ABLDStructure>(BuildGhost->GetClass(), BuildGhost->GetActorLocation(), BuildGhost->GetActorRotation(), SpawnParams);
-	SpawnedStructure->BLDComponent = this; 
-	*/
+	if (!IsBuildMoodOn || !BuildGhost || !BuildGhost->bCanBuild) return;
+	const TSubclassOf<ABLDStructure> StructureClass = BuildGhost->GetClass();
+	const FTransform RequestedTransform = BuildGhost->GetActorTransform();
+
+	// The preview remains local. The server creates a separate replicated structure.
+	ServerBuildStructure(StructureClass, RequestedTransform);
+
 	BuildGhost->StopGhost();
-	BuildGhost->bIsbuilt = true;
-	BuildGhost->OnStructureBuilt();
-	TSubclassOf<ABLDStructure> BLDCalss = BuildGhost->GetClass();
+	BuildGhost->Destroy();
 	BuildGhost = nullptr;
-	SpawnBuildGhost(BLDCalss);
+	SpawnBuildGhost(StructureClass);
 }
 
+void UBLDComponet::ServerBuildStructure_Implementation(TSubclassOf<ABLDStructure> StructureClass, FTransform RequestedTransform)
+{
+	if (!GetOwner() || !GetOwner()->HasAuthority() || !StructureClass || !GetWorld()) return;
+	APlayerState* RequestingPlayer = PlayerRefrence ? PlayerRefrence->GetPlayerState() : nullptr;
+	if (!RequestingPlayer) return;
+
+	ABuildingBlock* ControllingBlock = ABuildingBlock::GetControllingBlockAtLocation(GetWorld(), RequestedTransform.GetLocation());
+	// Outside all claims is allowed. Inside a claim, only its controlling block's owner may build.
+	if (ControllingBlock && ControllingBlock->GetBuildingOwner() != RequestingPlayer) return;
+
+	FActorSpawnParameters SpawnParams;
+	SpawnParams.Owner = GetOwner();
+	SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+	ABLDStructure* NewStructure = GetWorld()->SpawnActor<ABLDStructure>(StructureClass, RequestedTransform, SpawnParams);
+	if (!NewStructure) return;
+
+	NewStructure->BuildingDataTable = StructureDataTable;
+	NewStructure->BLDComponent = this;
+	if (!NewStructure->ValidateServerPlacement())
+	{
+		NewStructure->Destroy();
+		return;
+	}
+
+	NewStructure->InitializeBuiltStructure(StructureDataTable, RequestingPlayer, ControllingBlock);
+	NewStructure->OnStructureBuilt();
+}
 
 void UBLDComponet::InitMainTrace()
 {
-	GetWorld()->GetTimerManager().SetTimer(MainTraceCycleHandle, this, &UBLDComponet::MainTrace, 0.1f, true);
+	if (GetWorld()) GetWorld()->GetTimerManager().SetTimer(MainTraceCycleHandle, this, &UBLDComponet::MainTrace, 0.1f, true);
 }
 
 void UBLDComponet::StopMainTrace()
 {
-	//if (!MainTraceCycleHandle.IsValid()) return;
-	GetWorld()->GetTimerManager().ClearTimer(MainTraceCycleHandle);
-	
+	if (GetWorld()) GetWorld()->GetTimerManager().ClearTimer(MainTraceCycleHandle);
 }
 
 void UBLDComponet::UpgradeStructure(ABLDStructure* Structure)
 {
-	if (!IsBuildMoodOn || !Structure) return;
-	if (!Structure->bIsbuilt) return;
-	Structure->UpgradeStructure();
+	if (!IsBuildMoodOn || !Structure || !Structure->bIsbuilt) return;
+	ServerUpgradeStructure(Structure);
+}
+
+void UBLDComponet::ServerUpgradeStructure_Implementation(ABLDStructure* Structure)
+{
+	if (!GetOwner() || !GetOwner()->HasAuthority() || !IsValid(Structure)) return;
+	APlayerState* RequestingPlayer = PlayerRefrence ? PlayerRefrence->GetPlayerState() : nullptr;
+	if (!RequestingPlayer || Structure->GetBuildingOwner() != RequestingPlayer) return;
+	Structure->UpgradeStructure(StructureDataTable);
 }
 
 const FBuildingInfo* UBLDComponet::GetStructureData(FName StructureName) const
 {
-
-	if (!StructureDataTable)
-		return nullptr;
-
-	return StructureDataTable->FindRow<FBuildingInfo>(
-		StructureName,
-		TEXT("GetStructureData"));
+	return StructureDataTable ? StructureDataTable->FindRow<FBuildingInfo>(StructureName, TEXT("GetStructureData")) : nullptr;
 }
 
 const FBuildingInfo* UBLDComponet::GetUpgradelStructureData(FName StructureName) const
 {
-	const FBuildingInfo* NexLevelStructure = GetStructureData(StructureName);
-	if (!NexLevelStructure) return nullptr;
-	return GetStructureData(NexLevelStructure->NextLevelStructureRowName);
+	const FBuildingInfo* Current = GetStructureData(StructureName);
+	return Current ? GetStructureData(Current->NextLevelStructureRowName) : nullptr;
 }
 
 bool UBLDComponet::UpdatePreview_BlueprintFunction(TArray<FBuildingInfo*> StructureInfo)
@@ -220,19 +198,26 @@ bool UBLDComponet::UpdatePreview_BlueprintFunction(TArray<FBuildingInfo*> Struct
 void UBLDComponet::Demolish()
 {
 	if (!TargetStructure) return;
-	GetRefund();
-	TargetStructure->Destroy();
+	ServerDemolishStructure(TargetStructure);
 	TargetStructure = nullptr;
-	OnTargetStructureUpdate.Broadcast(TargetStructure);
+	OnTargetStructureUpdate.Broadcast(nullptr);
 }
 
-void UBLDComponet::GetRefund_Implementation()
+void UBLDComponet::ServerDemolishStructure_Implementation(ABLDStructure* Structure)
 {
-	
+	if (!GetOwner() || !GetOwner()->HasAuthority() || !IsValid(Structure)) return;
+	APlayerState* RequestingPlayer = PlayerRefrence ? PlayerRefrence->GetPlayerState() : nullptr;
+	if (!RequestingPlayer || Structure->GetBuildingOwner() != RequestingPlayer) return;
+
+	GetRefund();
+	ABuildingBlock* Block = Structure->GetOwningBuildingBlock();
+	Structure->Destroy();
+	if (Block) Block->RecalculateUpkeepRequirements();
 }
+
+void UBLDComponet::GetRefund_Implementation() {}
 
 void UBLDComponet::StopGhost_Comp()
 {
-	if (!BuildGhost) return;
-	BuildGhost->StopGhost();
+	if (BuildGhost) BuildGhost->StopGhost();
 }
