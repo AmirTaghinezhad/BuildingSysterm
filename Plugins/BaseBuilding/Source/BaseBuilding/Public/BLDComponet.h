@@ -95,9 +95,6 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, meta=(RequiredAssetDataTags="RowStructure=/Script/BaseBuilding.BuildingInfo"))
 	UDataTable* StructureDataTable = nullptr;
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Building Block", meta=(ClampMin="100.0"))
-	float NewBuildingBlockRadius = 1500.f;
-
 	UFUNCTION(BlueprintCallable) void AttemptRotation(float YawOffset);
 	FVector GhostTrace();
 	void MainTrace();
