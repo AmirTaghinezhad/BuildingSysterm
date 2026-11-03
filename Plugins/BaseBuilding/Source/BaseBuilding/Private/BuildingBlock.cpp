@@ -267,3 +267,8 @@ void ABuildingBlock::OnRep_UpkeepData()
 {
 	// UI-facing Blueprint can observe the replicated maps and payment state.
 }
+
+void ABuildingBlock::OnRep_TerritoryRadius()
+{
+	RefreshTerritoryRadius();
+}
