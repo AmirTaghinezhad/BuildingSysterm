@@ -97,6 +97,25 @@ bool ABuildingBlock::IsLocationInsideRadius(const FVector& Location) const
 	return Delta.SizeSquared() <= FMath::Square(TerritoryRadius);
 }
 
+TArray<ABuildingBlock*> ABuildingBlock::GetOverlappingBuildingBlocks() const
+{
+	TArray<ABuildingBlock*> Result;
+	if (!GetWorld()) return Result;
+	for (TActorIterator<ABuildingBlock> It(GetWorld()); It; ++It)
+	{
+		ABuildingBlock* Other = *It;
+		if (!IsValid(Other) || Other == this) continue;
+		const FVector2D Delta(Other->GetActorLocation().X - GetActorLocation().X,
+			Other->GetActorLocation().Y - GetActorLocation().Y);
+		const float CombinedRadius = TerritoryRadius + Other->TerritoryRadius;
+		if (Delta.SizeSquared() <= FMath::Square(CombinedRadius))
+		{
+			Result.Add(Other);
+		}
+	}
+	return Result;
+}
+
 ABuildingBlock* ABuildingBlock::GetControllingBlockAtLocation(UWorld* World, const FVector& Location)
 {
 	if (!World) return nullptr;
@@ -164,10 +183,11 @@ void ABuildingBlock::CheckUpkeepClock()
 {
 	if (!HasAuthority() || !GetWorld() || GameSecondsPerDay <= 0.f) return;
 	const float CurrentGameTime = GetWorld()->GetTimeSeconds();
-	if (CurrentGameTime - LastUpkeepGameTime < GameSecondsPerDay) return;
-
-	ProcessUpkeepDay();
-	LastUpkeepGameTime = CurrentGameTime;
+	while (CurrentGameTime - LastUpkeepGameTime >= GameSecondsPerDay)
+	{
+		ProcessUpkeepDay();
+		LastUpkeepGameTime += GameSecondsPerDay;
+	}
 	ForceNetUpdate();
 }
 
