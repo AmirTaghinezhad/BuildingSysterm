@@ -98,7 +98,7 @@ void ABuildingBlock::ClaimUnassignedStructures()
 	for (TActorIterator<ABLDStructure> It(GetWorld()); It; ++It)
 	{
 		ABLDStructure* Structure = *It;
-		if (!IsValid(Structure) || !Structure->IsBuilt() || Structure->GetOwningBuildingBlock()) continue;
+		if (!IsValid(Structure) || Structure->IsActorBeingDestroyed() || !Structure->IsBuilt() || Structure->GetOwningBuildingBlock()) continue;
 		if (Structure->GetBuildingOwner() != BuildingOwner) continue;
 		if (GetControllingBlockAtLocation(GetWorld(), Structure->GetActorLocation()) != this) continue;
 		Structure->SetOwningBuildingBlock(this);
@@ -167,7 +167,7 @@ void ABuildingBlock::RecalculateUpkeepRequirements()
 	for (TActorIterator<ABLDStructure> It(GetWorld()); It; ++It)
 	{
 		ABLDStructure* Structure = *It;
-		if (!IsValid(Structure) || Structure->GetOwningBuildingBlock() != this || !Structure->IsBuilt()) continue;
+		if (!IsValid(Structure) || Structure->IsActorBeingDestroyed() || Structure->GetOwningBuildingBlock() != this || !Structure->IsBuilt()) continue;
 
 		FName Resource = NAME_None;
 		float Amount = 0.f;
@@ -244,7 +244,7 @@ void ABuildingBlock::ApplyDecayToStructures()
 	for (TActorIterator<ABLDStructure> It(GetWorld()); It; ++It)
 	{
 		ABLDStructure* Structure = *It;
-		if (IsValid(Structure) && Structure->GetOwningBuildingBlock() == this && Structure->IsBuilt())
+		if (IsValid(Structure) && !Structure->IsActorBeingDestroyed() && Structure->GetOwningBuildingBlock() == this && Structure->IsBuilt())
 		{
 			StructuresToDecay.Add(Structure);
 		}
