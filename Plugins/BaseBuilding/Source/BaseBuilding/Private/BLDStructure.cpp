@@ -5,6 +5,7 @@
 #include "Camera/CameraComponent.h"
 #include "Components/BoxComponent.h"
 #include "Engine/DataTable.h"
+#include "EngineUtils.h"
 #include "Engine/OverlapResult.h"
 #include "Engine/StaticMesh.h"
 #include "Engine/World.h"
@@ -42,6 +43,7 @@ void ABLDStructure::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLif
 	DOREPLIFETIME(ABLDStructure, StructureName);
 	DOREPLIFETIME(ABLDStructure, BuildingOwner);
 	DOREPLIFETIME(ABLDStructure, OwningBuildingBlock);
+	DOREPLIFETIME(ABLDStructure, BuildingDataTable);
 	DOREPLIFETIME(ABLDStructure, CurrentHealth);
 }
 
@@ -124,9 +126,12 @@ void ABLDStructure::ApplyUpkeepDecay(float PercentageOfMaxHealth)
 		? BuildingDataTable->FindRow<FBuildingInfo>(StructureName, TEXT("ApplyUpkeepDecay"))
 		: nullptr;
 	const float MaxHealth = Data ? Data->MaxHealth : CurrentHealth;
-	if (MaxHealth <= 0.f) return;
+	const float DecayPercentage = PercentageOfMaxHealth < 0.f
+		? (Data ? Data->DecayPercentagePerDay : 10.f)
+		: PercentageOfMaxHealth;
+	if (MaxHealth <= 0.f || DecayPercentage <= 0.f) return;
 
-	CurrentHealth = FMath::Max(0.f, CurrentHealth - MaxHealth * PercentageOfMaxHealth / 100.f);
+	CurrentHealth = FMath::Max(0.f, CurrentHealth - MaxHealth * DecayPercentage / 100.f);
 	ForceNetUpdate();
 	if (CurrentHealth <= 0.f)
 	{
@@ -155,6 +160,7 @@ void ABLDStructure::UpgradeStructure(UDataTable* DataTable)
 
 void ABLDStructure::OnRep_CurrentHealth() {}
 void ABLDStructure::OnRep_StructureName() { ApplyStructureData(); }
+void ABLDStructure::OnRep_BuildingDataTable() { ApplyStructureData(); }
 
 void ABLDStructure::InitGhost()
 {
