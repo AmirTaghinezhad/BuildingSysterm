@@ -97,5 +97,6 @@ private:
 	FTimerHandle UpkeepTimerHandle;
 	void CheckUpkeepClock();
 	void RefreshTerritoryRadius();
+	void ClaimUnassignedStructures();
 	static int64 NextCreationOrder;
 };
