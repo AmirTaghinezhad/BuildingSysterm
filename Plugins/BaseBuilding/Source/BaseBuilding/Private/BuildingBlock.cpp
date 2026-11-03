@@ -66,7 +66,7 @@ void ABuildingBlock::InitializeBuildingBlock(APlayerState* InOwner, float InRadi
 	if (!HasAuthority()) return;
 	BuildingOwner = InOwner;
 	if (InRadius > 0.f) TerritoryRadius = InRadius;
-	CreationOrder = NextCreationOrder++;
+	if (CreationOrder <= 0) CreationOrder = NextCreationOrder++;
 	RefreshTerritoryRadius();
 	ForceNetUpdate();
 }
@@ -107,7 +107,8 @@ bool ABuildingBlock::IsLocationOwnedBy(UWorld* World, const FVector& Location, c
 
 bool ABuildingBlock::CanPlaceBlockAtLocation(UWorld* World, const FVector& Location)
 {
-	return GetControllingBlockAtLocation(World, Location) == nullptr;
+	// Overlapping blocks are valid. Oldest-block priority clips the newer block's effective territory.
+	return World != nullptr;
 }
 
 void ABuildingBlock::RecalculateUpkeepRequirements()
@@ -202,7 +203,7 @@ void ABuildingBlock::ApplyDecayToStructures()
 
 	for (ABLDStructure* Structure : StructuresToDecay)
 	{
-		Structure->ApplyUpkeepDecay(DefaultDecayPercentagePerDay);
+		Structure->ApplyUpkeepDecay(-1.f);
 	}
 }
 
