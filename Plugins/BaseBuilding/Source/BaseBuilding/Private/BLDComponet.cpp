@@ -132,6 +132,16 @@ void UBLDComponet::ServerBuildStructure_Implementation(TSubclassOf<ABLDStructure
 	if (!GetOwner() || !GetOwner()->HasAuthority() || !StructureClass || !GetWorld()) return;
 	APlayerState* RequestingPlayer = PlayerRefrence ? PlayerRefrence->GetPlayerState() : nullptr;
 	if (!RequestingPlayer || !PlayerRefrence || FVector::DistSquared(PlayerRefrence->GetActorLocation(), RequestedTransform.GetLocation()) > FMath::Square(1000.f)) return;
+	if (!StructureDataTable) return;
+
+	bool bClassAllowed = false;
+	TArray<FBuildingInfo*> BuildingRows;
+	StructureDataTable->GetAllRows<FBuildingInfo>(TEXT("ServerBuildStructure"), BuildingRows);
+	for (const FBuildingInfo* Row : BuildingRows)
+	{
+		if (Row && Row->StructureClass == StructureClass) { bClassAllowed = true; break; }
+	}
+	if (!bClassAllowed) return;
 
 	ABuildingBlock* ControllingBlock = ABuildingBlock::GetControllingBlockAtLocation(GetWorld(), RequestedTransform.GetLocation());
 	// Outside all claims is allowed. Inside a claim, only its controlling block's owner may build.
@@ -175,7 +185,8 @@ void UBLDComponet::ServerUpgradeStructure_Implementation(ABLDStructure* Structur
 {
 	if (!GetOwner() || !GetOwner()->HasAuthority() || !IsValid(Structure)) return;
 	APlayerState* RequestingPlayer = PlayerRefrence ? PlayerRefrence->GetPlayerState() : nullptr;
-	if (!RequestingPlayer || Structure->GetBuildingOwner() != RequestingPlayer) return;
+	if (!RequestingPlayer || Structure->GetBuildingOwner() != RequestingPlayer || !PlayerRefrence ||
+		FVector::DistSquared(PlayerRefrence->GetActorLocation(), Structure->GetActorLocation()) > FMath::Square(600.f)) return;
 	Structure->UpgradeStructure(StructureDataTable);
 }
 
@@ -207,7 +218,8 @@ void UBLDComponet::ServerDemolishStructure_Implementation(ABLDStructure* Structu
 {
 	if (!GetOwner() || !GetOwner()->HasAuthority() || !IsValid(Structure)) return;
 	APlayerState* RequestingPlayer = PlayerRefrence ? PlayerRefrence->GetPlayerState() : nullptr;
-	if (!RequestingPlayer || Structure->GetBuildingOwner() != RequestingPlayer) return;
+	if (!RequestingPlayer || Structure->GetBuildingOwner() != RequestingPlayer || !PlayerRefrence ||
+		FVector::DistSquared(PlayerRefrence->GetActorLocation(), Structure->GetActorLocation()) > FMath::Square(600.f)) return;
 
 	GetRefund();
 	ABuildingBlock* Block = Structure->GetOwningBuildingBlock();
