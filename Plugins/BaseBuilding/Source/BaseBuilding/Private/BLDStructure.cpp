@@ -58,6 +58,42 @@ void ABLDStructure::InitializeBuiltStructure(UDataTable* InDataTable, APlayerSta
 	ForceNetUpdate();
 }
 
+bool ABLDStructure::ValidateServerPlacement()
+{
+	if (!HasAuthority() || !GetWorld()) return false;
+	BuildTransform = GetActorTransform();
+
+	ABLDStructure* BestTarget = nullptr;
+	FName BestOwnSocket = NAME_None;
+	FName BestTargetSocket = NAME_None;
+	float BestDistance = SnapRadius;
+
+	for (TActorIterator<ABLDStructure> It(GetWorld()); It; ++It)
+	{
+		ABLDStructure* Other = *It;
+		if (!IsValid(Other) || Other == this || !Other->IsBuilt() || !Other->BuildingMesh) continue;
+		for (const FSnapSocket& Socket : SnapSockets)
+		{
+			if (!BuildingMesh->DoesSocketExist(Socket.SocketName) ||
+				!Other->BuildingMesh->DoesSocketExist(Socket.CompatibleSocket)) continue;
+
+			const float Distance = FVector::Distance(
+				BuildingMesh->GetSocketLocation(Socket.SocketName),
+				Other->BuildingMesh->GetSocketLocation(Socket.CompatibleSocket));
+			if (Distance < BestDistance)
+			{
+				BestDistance = Distance;
+				BestTarget = Other;
+				BestOwnSocket = Socket.SocketName;
+				BestTargetSocket = Socket.CompatibleSocket;
+			}
+		}
+	}
+
+	if (bShouldSnap && !BestTarget) return false;
+	return ValidateBuild(BestTarget != nullptr, BestTarget, BestOwnSocket, BestTargetSocket);
+}
+
 void ABLDStructure::ApplyStructureData()
 {
 	if (!BuildingDataTable) return;
