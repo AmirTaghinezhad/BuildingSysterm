@@ -224,8 +224,8 @@ void UBLDComponet::ServerDemolishStructure_Implementation(ABLDStructure* Structu
 
 	GetRefund();
 	ABuildingBlock* Block = Structure->GetOwningBuildingBlock();
-	Structure->Destroy();
-	if (Block) Block->RecalculateUpkeepRequirements();
+	if (Block) Block->DestroyStructure(Structure);
+	else Structure->Destroy();
 }
 
 void UBLDComponet::GetRefund_Implementation() {}
