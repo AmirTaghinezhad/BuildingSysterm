@@ -33,6 +33,8 @@ public:
 
 	UFUNCTION(BlueprintPure, Category="Building Block")
 	bool IsLocationInsideRadius(const FVector& Location) const;
+	UFUNCTION(BlueprintPure, Category="Building Block")
+	TArray<ABuildingBlock*> GetOverlappingBuildingBlocks() const;
 
 	// Resolves overlapping claims using the oldest block that contains the location.
 	static ABuildingBlock* GetControllingBlockAtLocation(UWorld* World, const FVector& Location);
