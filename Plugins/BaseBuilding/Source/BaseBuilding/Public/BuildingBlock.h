@@ -40,7 +40,6 @@ public:
 	// Resolves overlapping claims using the oldest block that contains the location.
 	static ABuildingBlock* GetControllingBlockAtLocation(UWorld* World, const FVector& Location);
 	static bool IsLocationOwnedBy(UWorld* World, const FVector& Location, const APlayerState* Player);
-	static bool CanPlaceBlockAtLocation(UWorld* World, const FVector& Location);
 
 	// One period represents one in-game day. The value is measured in game-world seconds.
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Upkeep", meta=(ClampMin="1.0"))
