@@ -102,7 +102,7 @@ void ABLDStructure::ApplyStructureData()
 	const FBuildingInfo* Data = BuildingDataTable->FindRow<FBuildingInfo>(StructureName, TEXT("ApplyStructureData"));
 	if (!Data) return;
 	if (Data->StructureMesh) BuildingMesh->SetStaticMesh(Data->StructureMesh);
-	CurrentHealth = Data->MaxHealth;
+	if (HasAuthority() && CurrentHealth <= 0.f) CurrentHealth = Data->MaxHealth;
 }
 
 bool ABLDStructure::GetUpkeepRequirement(FName& OutResource, float& OutAmount) const
@@ -121,7 +121,7 @@ bool ABLDStructure::GetUpkeepRequirement(FName& OutResource, float& OutAmount) c
 
 void ABLDStructure::ApplyUpkeepDecay(float PercentageOfMaxHealth)
 {
-	if (!HasAuthority() || !bIsbuilt || PercentageOfMaxHealth <= 0.f) return;
+	if (!HasAuthority() || !bIsbuilt || PercentageOfMaxHealth == 0.f) return;
 	const FBuildingInfo* Data = BuildingDataTable
 		? BuildingDataTable->FindRow<FBuildingInfo>(StructureName, TEXT("ApplyUpkeepDecay"))
 		: nullptr;
@@ -155,6 +155,26 @@ void ABLDStructure::UpgradeStructure(UDataTable* DataTable)
 	if (NextData->StructureMesh) BuildingMesh->SetStaticMesh(NextData->StructureMesh);
 	CurrentHealth = NextData->MaxHealth;
 	if (OwningBuildingBlock) OwningBuildingBlock->RecalculateUpkeepRequirements();
+	ForceNetUpdate();
+}
+
+float ABLDStructure::GetDecayPercentagePerDay(float FallbackPercentage) const
+{
+	if (BuildingDataTable)
+	{
+		if (const FBuildingInfo* Data = BuildingDataTable->FindRow<FBuildingInfo>(StructureName, TEXT("GetDecayPercentagePerDay")))
+		{
+			return Data->DecayPercentagePerDay;
+		}
+	}
+	return FallbackPercentage;
+}
+
+void ABLDStructure::SetOwningBuildingBlock(ABuildingBlock* NewBlock)
+{
+	if (!HasAuthority()) return;
+	OwningBuildingBlock = NewBlock;
+	if (NewBlock) BuildingOwner = NewBlock->GetBuildingOwner();
 	ForceNetUpdate();
 }
 
