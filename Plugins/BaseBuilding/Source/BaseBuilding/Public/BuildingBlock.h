@@ -75,7 +75,7 @@ protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Building Block")
 	TObjectPtr<USphereComponent> TerritorySphere;
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Replicated, Category="Building Block", meta=(ClampMin="100.0"))
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, ReplicatedUsing=OnRep_TerritoryRadius, Category="Building Block", meta=(ClampMin="100.0"))
 	float TerritoryRadius = 1500.f;
 
 	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Replicated, Category="Building Block")
@@ -98,6 +98,9 @@ protected:
 
 	UFUNCTION()
 	void OnRep_UpkeepData();
+
+	UFUNCTION()
+	void OnRep_TerritoryRadius();
 
 private:
 	FTimerHandle UpkeepTimerHandle;
