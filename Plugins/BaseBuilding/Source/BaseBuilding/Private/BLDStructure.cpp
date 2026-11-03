@@ -1,28 +1,26 @@
-// Fill out your copyright notice in the Description page of Project Settings.
-
-
 #include "BLDStructure.h"
 
 #include "BLDComponet.h"
+#include "BuildingBlock.h"
 #include "Camera/CameraComponent.h"
 #include "Components/BoxComponent.h"
-#include "TimerManager.h"
-#include "EditorGizmos/GizmoRotationUtil.h"
+#include "Engine/DataTable.h"
 #include "Engine/OverlapResult.h"
 #include "Engine/StaticMesh.h"
 #include "Engine/World.h"
-#include "Transform/TransformConstraintUtil.h"
+#include "GameFramework/PlayerState.h"
+#include "Net/UnrealNetwork.h"
+#include "TimerManager.h"
 
-// Sets default values
 ABLDStructure::ABLDStructure()
 {
-	// Set this actor to call Tick() every frame.  You can turn this off to improve performance if you don't need it.
 	PrimaryActorTick.bCanEverTick = false;
-	RootComponent = CreateDefaultSubobject<USceneComponent>(TEXT("Root"));
+	bReplicates = true;
+	SetReplicateMovement(true);
 
+	RootComponent = CreateDefaultSubobject<USceneComponent>(TEXT("Root"));
 	BuildingMesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("BuildingMesh"));
 	BuildingMesh->SetupAttachment(RootComponent);
-
 	ValidationBox = CreateDefaultSubobject<UBoxComponent>(TEXT("ValidationBox"));
 	ValidationBox->SetupAttachment(RootComponent);
 	ValidationBox->SetCollisionEnabled(ECollisionEnabled::NoCollision);
@@ -30,20 +28,101 @@ ABLDStructure::ABLDStructure()
 	ValidationBox->SetHiddenInGame(true);
 }
 
-// Called when the game starts or when spawned
 void ABLDStructure::BeginPlay()
 {
 	Super::BeginPlay();
-	if (!BLDComponent) {UE_LOG(LogTemp, Warning, TEXT("BLDStructure: BLDComponet Is not Valid"));}
-	
-	FBoxSphereBounds Bounds = BuildingMesh->GetStaticMesh()->GetBounds();
-
-	//PlacementBounds->SetBoxExtent(Bounds.BoxExtent + FVector(-40, -30, -10));
-	
+	if (bIsbuilt && HasAuthority() && CurrentHealth <= 0.f) ApplyStructureData();
 }
+
+void ABLDStructure::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
+{
+	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
+	DOREPLIFETIME(ABLDStructure, bIsbuilt);
+	DOREPLIFETIME(ABLDStructure, bCanBuild);
+	DOREPLIFETIME(ABLDStructure, StructureName);
+	DOREPLIFETIME(ABLDStructure, BuildingOwner);
+	DOREPLIFETIME(ABLDStructure, OwningBuildingBlock);
+	DOREPLIFETIME(ABLDStructure, CurrentHealth);
+}
+
+void ABLDStructure::InitializeBuiltStructure(UDataTable* InDataTable, APlayerState* InOwner, ABuildingBlock* InBlock)
+{
+	if (!HasAuthority()) return;
+	BuildingDataTable = InDataTable;
+	BuildingOwner = InOwner;
+	OwningBuildingBlock = InBlock;
+	bIsbuilt = true;
+	bCanBuild = true;
+	ApplyStructureData();
+	if (OwningBuildingBlock) OwningBuildingBlock->RecalculateUpkeepRequirements();
+	ForceNetUpdate();
+}
+
+void ABLDStructure::ApplyStructureData()
+{
+	if (!BuildingDataTable) return;
+	const FBuildingInfo* Data = BuildingDataTable->FindRow<FBuildingInfo>(StructureName, TEXT("ApplyStructureData"));
+	if (!Data) return;
+	if (Data->StructureMesh) BuildingMesh->SetStaticMesh(Data->StructureMesh);
+	CurrentHealth = Data->MaxHealth;
+}
+
+bool ABLDStructure::GetUpkeepRequirement(FName& OutResource, float& OutAmount) const
+{
+	OutResource = NAME_None;
+	OutAmount = 0.f;
+	if (!BuildingDataTable) return false;
+	const FBuildingInfo* Data = BuildingDataTable->FindRow<FBuildingInfo>(StructureName, TEXT("GetUpkeepRequirement"));
+	if (!Data) return false;
+
+	OutResource = Data->UpkeepResource.IsNone() ? Data->RequiredResource : Data->UpkeepResource;
+	const float Percentage = FMath::Max(0.f, Data->UpkeepPercentage);
+	OutAmount = FMath::Max(0.f, Data->RequiredAmount) * Percentage / 100.f;
+	return !OutResource.IsNone() && OutAmount > 0.f;
+}
+
+void ABLDStructure::ApplyUpkeepDecay(float PercentageOfMaxHealth)
+{
+	if (!HasAuthority() || !bIsbuilt || PercentageOfMaxHealth <= 0.f) return;
+	const FBuildingInfo* Data = BuildingDataTable
+		? BuildingDataTable->FindRow<FBuildingInfo>(StructureName, TEXT("ApplyUpkeepDecay"))
+		: nullptr;
+	const float MaxHealth = Data ? Data->MaxHealth : CurrentHealth;
+	if (MaxHealth <= 0.f) return;
+
+	CurrentHealth = FMath::Max(0.f, CurrentHealth - MaxHealth * PercentageOfMaxHealth / 100.f);
+	ForceNetUpdate();
+	if (CurrentHealth <= 0.f)
+	{
+		if (OwningBuildingBlock) OwningBuildingBlock->DestroyStructure(this);
+		else Destroy();
+	}
+}
+
+void ABLDStructure::UpgradeStructure(UDataTable* DataTable)
+{
+	if (!HasAuthority() || !bIsbuilt) return;
+	UDataTable* SourceTable = DataTable ? DataTable : BuildingDataTable;
+	if (!SourceTable) return;
+	const FBuildingInfo* CurrentData = SourceTable->FindRow<FBuildingInfo>(StructureName, TEXT("UpgradeStructure"));
+	if (!CurrentData || CurrentData->NextLevelStructureRowName.IsNone()) return;
+	const FBuildingInfo* NextData = SourceTable->FindRow<FBuildingInfo>(CurrentData->NextLevelStructureRowName, TEXT("UpgradeStructure"));
+	if (!NextData) return;
+
+	BuildingDataTable = SourceTable;
+	StructureName = NextData->StructureName;
+	if (NextData->StructureMesh) BuildingMesh->SetStaticMesh(NextData->StructureMesh);
+	CurrentHealth = NextData->MaxHealth;
+	if (OwningBuildingBlock) OwningBuildingBlock->RecalculateUpkeepRequirements();
+	ForceNetUpdate();
+}
+
+void ABLDStructure::OnRep_CurrentHealth() {}
+void ABLDStructure::OnRep_StructureName() { ApplyStructureData(); }
 
 void ABLDStructure::InitGhost()
 {
+	SetReplicates(false);
 	BuildingMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 	GetWorldTimerManager().SetTimer(CycleHandle, this, &ABLDStructure::UpdateBuildPreview, 0.01f, true);
 }
@@ -51,63 +130,43 @@ void ABLDStructure::InitGhost()
 void ABLDStructure::StopGhost()
 {
 	BuildingMesh->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
-	GetWorld()->GetTimerManager().ClearTimer(CycleHandle);
+	GetWorldTimerManager().ClearTimer(CycleHandle);
 }
 
 void ABLDStructure::UpdateBuildPreview()
 {
-		BuildCycle();
-		ModifyBuildTransform(BuildTransform);
-		SetActorTransform(BuildTransform);
-	
+	BuildCycle();
+	ModifyBuildTransform(BuildTransform);
+	SetActorTransform(BuildTransform);
 }
 
 void ABLDStructure::BuildCycle()
 {
-	//Trace to find a location to check for
+	if (!BLDComponent) return;
 	BuildTransform.SetLocation(BLDComponent->GhostTrace());
-	
-	float StructureClosestDistance = 1000;
-	float ScoketClosestDistance = 1000;
-	FTransform MySocketTransform;
-	FTransform OtherSocketTransform;
+
+	float SocketClosestDistance = 1000.f;
+	FTransform MySocketTransform, OtherSocketTransform;
 	bool bSocketFaceEachOther = false;
-	FCollisionShape SphereShape =
-	FCollisionShape::MakeSphere(SnapRadius);
 	ABLDStructure* SnappedStructure = nullptr;
-	FName UsedSocketName;
-	FName TargetSocketName;
-		
+	FName UsedSocketName, TargetSocketName;
 	TArray<FOverlapResult> StructureResults;
+	GetWorld()->OverlapMultiByObjectType(StructureResults, BuildTransform.GetLocation(), FQuat::Identity,
+		FCollisionObjectQueryParams(ECC_WorldDynamic), FCollisionShape::MakeSphere(SnapRadius));
 
-	GetWorld()->OverlapMultiByObjectType(
-		StructureResults,
-		BuildTransform.GetLocation(),
-		FQuat::Identity,
-		FCollisionObjectQueryParams(ECC_WorldDynamic),
-		SphereShape
-	);
-	ABLDStructure* TargetStructure = nullptr;
-	for (const FOverlapResult& StructureResult : StructureResults)
+	for (const FOverlapResult& Result : StructureResults)
 	{
-		ABLDStructure* Other = Cast<ABLDStructure>(StructureResult.GetActor());
-
-		if (!Other) continue;
-		
-		if (Other == this) continue;
+		ABLDStructure* Other = Cast<ABLDStructure>(Result.GetActor());
+		if (!Other || Other == this || !Other->bIsbuilt) continue;
 		for (const FSnapSocket& Socket : SnapSockets)
 		{
-			if (!Other->BuildingMesh->DoesSocketExist(Socket.CompatibleSocket))
-				continue;
-
-			FVector ExtrnlSocketLocation = Other->BuildingMesh->GetSocketLocation(Socket.CompatibleSocket);
-		
-			float Distance = FVector::Dist(BuildTransform.GetLocation(), ExtrnlSocketLocation);
-			if (Distance < ScoketClosestDistance)
+			if (!Other->BuildingMesh || !Other->BuildingMesh->DoesSocketExist(Socket.CompatibleSocket)) continue;
+			const FVector SocketLocation = Other->BuildingMesh->GetSocketLocation(Socket.CompatibleSocket);
+			const float Distance = FVector::Dist(BuildTransform.GetLocation(), SocketLocation);
+			if (Distance < SocketClosestDistance)
 			{
-				ScoketClosestDistance = Distance;
+				SocketClosestDistance = Distance;
 				SnappedStructure = Other;
-				
 				UsedSocketName = Socket.SocketName;
 				TargetSocketName = Socket.CompatibleSocket;
 				MySocketTransform = BuildingMesh->GetSocketTransform(Socket.SocketName);
@@ -116,24 +175,19 @@ void ABLDStructure::BuildCycle()
 			}
 		}
 	}
-	
-	//constexpr float SnapDistance = 200.f; //Change this whenever SnapRaduis is changes
 
-	if (ScoketClosestDistance < SnapRadius)
+	if (SocketClosestDistance < SnapRadius)
 	{
-		FTransform TargetSocketTransform = OtherSocketTransform;
+		FTransform TargetSocket = OtherSocketTransform;
 		if (bSocketFaceEachOther)
 		{
-			FQuat Flip180(TargetSocketTransform.GetUnitAxis(EAxis::Z), PI);
-
-			TargetSocketTransform.SetRotation(Flip180 * TargetSocketTransform.GetRotation());
+			const FQuat Flip(TargetSocket.GetUnitAxis(EAxis::Z), PI);
+			TargetSocket.SetRotation(Flip * TargetSocket.GetRotation());
 		}
-		// Transform of my socket relative to my actor.
-		FTransform MySocketRelative = MySocketTransform.GetRelativeTransform(GetActorTransform());
-
-		// Final actor transform that aligns MySocket to the other socket/ RotationOffset is checked so player manual rotation is not reversed 
-		BuildTransform = MySocketRelative.Inverse() * TargetSocketTransform;
-		if(FMath::Abs(RotationOffset.Yaw) >= 180.f) BuildTransform.SetRotation(BuildTransform.GetRotation() * RotationOffset.Quaternion().GetNormalized());
+		const FTransform MyRelative = MySocketTransform.GetRelativeTransform(GetActorTransform());
+		BuildTransform = MyRelative.Inverse() * TargetSocket;
+		if (FMath::Abs(RotationOffset.Yaw) >= 180.f)
+			BuildTransform.SetRotation(BuildTransform.GetRotation() * RotationOffset.Quaternion().GetNormalized());
 	}
 	else
 	{
@@ -141,144 +195,61 @@ void ABLDStructure::BuildCycle()
 		RotationOffset = FRotator::ZeroRotator;
 		SnappedStructure = nullptr;
 	}
-	
-	//bool bBlocked = ValidateBuild(IsValid(SnappedStructure));
-	bool bNewCanBuild = ValidateBuild(
-	IsValid(SnappedStructure),
-	SnappedStructure,
-	UsedSocketName,
-	TargetSocketName
-);
+
+	const bool bNewCanBuild = ValidateBuild(IsValid(SnappedStructure), SnappedStructure, UsedSocketName, TargetSocketName);
 	if (!bBuildStateInitialized || bNewCanBuild != bCanBuild)
 	{
-		//bBuildStateInitialized is used To avoid a first frame confliction caused by bCanBuild default value being the same as the first frame status, thus refusing if-clause 
 		bBuildStateInitialized = true;
 		bCanBuild = bNewCanBuild;
-		//BLDComponent->OnBuildUpdate.Broadcast(bCanBuild);
 		UpdatePreview_BlueprintFunction(bCanBuild);
 	}
-	
-	
 }
 
 void ABLDStructure::Trace()
 {
-	FVector StartLocation = BLDComponent->CameraRef->GetComponentLocation() +  BLDComponent->CameraRef->GetForwardVector() * 350.0f;
-	FVector EndLocation = BLDComponent->CameraRef->GetComponentLocation() +  BLDComponent->CameraRef->GetForwardVector() * 750.0f;
-	FHitResult HitResult;
-	FCollisionQueryParams CollisionParams;
-	CollisionParams.AddIgnoredActor(GetOwner());
-
-	bool Hit = GetWorld()->LineTraceSingleByChannel(HitResult, StartLocation, EndLocation, ECC_Visibility, CollisionParams);
-
-	if (Hit)
-	{
-		BuildTransform.SetLocation(HitResult.ImpactPoint);
-		UE_LOG(LogTemp, Log, TEXT("BLDStructure: Hit is true, Hit locations is %s"), *HitResult.ImpactNormal.ToString());
-		
-	}
-	else
-	{
-		BuildTransform.SetLocation(HitResult.TraceEnd);
-		UE_LOG(LogTemp, Log, TEXT("BLDStructure: Hit is false"));
-	}
-	DrawDebugLine(GetWorld(), StartLocation, EndLocation, FColor::Red,false, 5.0f);
-}
-
-void ABLDStructure::RotationOfset(float ZOffset)
-{
-	/*if (!bCanFlip) return;
-	FRotator Rot = GetActorRotation();
-	Rot.Yaw += 180.f;
-	SetActorRotation(Rot);*/
-	RotationOffset.Yaw += ZOffset;
-}
-
-void ABLDStructure::ModifyBuildTransform_Implementation(FTransform& InOutTransform)
-{
-}
-
-bool ABLDStructure::ValidateBuild(
-	bool HasSnapped,
-	ABLDStructure* SnappedStructure,
-	FName UsedSocketName,
-	FName TargetSocketName
-)
-{
-	//if this structure should be snapped but is not
-	if (!HasSnapped && bShouldSnap) return false;
-	
-	FCollisionShape Shape =
-	FCollisionShape::MakeBox(ValidationBox->GetScaledBoxExtent());
-
+	if (!BLDComponent || !BLDComponent->CameraRef) return;
+	const FVector Start = BLDComponent->CameraRef->GetComponentLocation() + BLDComponent->CameraRef->GetForwardVector() * 350.f;
+	const FVector End = BLDComponent->CameraRef->GetComponentLocation() + BLDComponent->CameraRef->GetForwardVector() * 750.f;
+	FHitResult Hit;
 	FCollisionQueryParams Params;
-	//Params.AddIgnoredActor(GetOwner());
+	Params.AddIgnoredActor(GetOwner());
+	if (GetWorld()->LineTraceSingleByChannel(Hit, Start, End, ECC_Visibility, Params))
+		BuildTransform.SetLocation(Hit.ImpactPoint);
+	else
+		BuildTransform.SetLocation(End);
+	DrawDebugLine(GetWorld(), Start, End, FColor::Red, false, 5.f);
+}
+
+void ABLDStructure::RotationOfset(float ZOffset) { RotationOffset.Yaw += ZOffset; }
+void ABLDStructure::ModifyBuildTransform_Implementation(FTransform& InOutTransform) {}
+void ABLDStructure::UpdatePreview_BlueprintFunction_Implementation(bool CanBuild) {}
+bool ABLDStructure::ValidateBuild_BlueprintSide_Implementation(ABLDStructure*, FName, FName) { return true; }
+void ABLDStructure::OnStructureBuilt_Implementation() {}
+
+bool ABLDStructure::ValidateBuild(bool HasSnapped, ABLDStructure* SnappedStructure, FName UsedSocketName, FName TargetSocketName)
+{
+	if (!HasSnapped && bShouldSnap) return false;
+	const FCollisionShape Shape = FCollisionShape::MakeBox(ValidationBox->GetScaledBoxExtent());
+	FCollisionQueryParams Params;
 	Params.AddIgnoredActor(this);
-	//Params.AddIgnoredActor(SnappedStructure);
-	
-	const FVector BoxLocation = BuildTransform.TransformPosition( ValidationBox->GetRelativeLocation());
+	const FVector BoxLocation = BuildTransform.TransformPosition(ValidationBox->GetRelativeLocation());
 	const FQuat BoxRotation = BuildTransform.GetRotation() * ValidationBox->GetRelativeRotation().Quaternion();
-	
 	TArray<FOverlapResult> Results;
-
-	bool bBlocked =
-		GetWorld()->OverlapMultiByChannel(
-			Results,
-			BoxLocation,
-			BoxRotation,
-			ECC_WorldStatic,
-			Shape,
-			Params
-		);
-
-	DrawDebugBox(GetWorld(), BoxLocation, ValidationBox->GetScaledBoxExtent(),BoxRotation, FColor::Red, false, 5.0f);
+	const bool bBlocked = GetWorld()->OverlapMultiByChannel(Results, BoxLocation, BoxRotation, ECC_WorldStatic, Shape, Params);
 	if (bBlocked) return false;
-	
-	if (!ValidateBuild_BlueprintSide( SnappedStructure, UsedSocketName, TargetSocketName))
-		return false;
-	
-	return true;
-	
+	return ValidateBuild_BlueprintSide(SnappedStructure, UsedSocketName, TargetSocketName);
 }
 
-bool ABLDStructure::ValidateBuild_BlueprintSide_Implementation(    
-	ABLDStructure* SnappedStructure,
-	FName UsedSocketName,
-	FName TargetSocketName)
-{
-	return true;
-}
-
-float ABLDStructure::GetHealth()
-{
-	return CurrentHealth;
-}
-
-FName ABLDStructure::GetStructureName()
-{
-	return StructureName;
-}
-
+float ABLDStructure::GetHealth() const { return CurrentHealth; }
+FName ABLDStructure::GetStructureName() const { return StructureName; }
 void ABLDStructure::Add_DepleatHealth(float Health)
 {
+	if (!HasAuthority() || Health <= 0.f) return;
+	CurrentHealth = FMath::Max(0.f, CurrentHealth - Health);
+	if (CurrentHealth <= 0.f)
+	{
+		if (OwningBuildingBlock) OwningBuildingBlock->DestroyStructure(this);
+		else Destroy();
+	}
 }
-
-void ABLDStructure::UpgradeStructure()
-{
-	const FBuildingInfo* UpgradeStructureData = BLDComponent->GetUpgradelStructureData(StructureName);
-	
-	if (!UpgradeStructureData) return;
-	BuildingMesh->EmptyOverrideMaterials();
-	BuildingMesh->SetStaticMesh(UpgradeStructureData->StructureMesh);
-	CurrentHealth = UpgradeStructureData->MaxHealth;
-	StructureName = UpgradeStructureData->StructureName;
-}
-
-void ABLDStructure::UpdatePreview_BlueprintFunction_Implementation(bool CanBuild)
-{
-}
-
-void ABLDStructure::OnStructureBuilt_Implementation()
-{
-}
-
+void ABLDStructure::UpgradeStructure() { UpgradeStructure(BuildingDataTable); }
