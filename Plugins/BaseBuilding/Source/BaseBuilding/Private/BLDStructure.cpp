@@ -164,7 +164,7 @@ float ABLDStructure::GetDecayPercentagePerDay(float FallbackPercentage) const
 	{
 		if (const FBuildingInfo* Data = BuildingDataTable->FindRow<FBuildingInfo>(StructureName, TEXT("GetDecayPercentagePerDay")))
 		{
-			return Data->DecayPercentagePerDay;
+			return Data->DecayPercentagePerDay > 0.f ? Data->DecayPercentagePerDay : FallbackPercentage;
 		}
 	}
 	return FallbackPercentage;
