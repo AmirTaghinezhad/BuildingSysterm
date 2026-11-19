@@ -83,7 +83,8 @@ public:
 	float GetDecayPercentagePerDay(float FallbackPercentage) const;
 	void SetOwningBuildingBlock(ABuildingBlock* NewBlock);
 	void UpgradeStructure(UDataTable* DataTable);
-
+UPROPERTY(BlueprintReadOnly, VisibleInstanceOnly, ReplicatedUsing=OnRep_CurrentHealth)
+	float CurrentHealth = 0.f;
 protected:
 	virtual void BeginPlay() override;
 	FTimerHandle CycleHandle;
@@ -98,8 +99,7 @@ protected:
 private:
 	FRotator RotationOffset = FRotator::ZeroRotator;
 
-	UPROPERTY(VisibleInstanceOnly, ReplicatedUsing=OnRep_CurrentHealth)
-	float CurrentHealth = 0.f;
+	
 
 	UFUNCTION()
 	void OnRep_CurrentHealth();

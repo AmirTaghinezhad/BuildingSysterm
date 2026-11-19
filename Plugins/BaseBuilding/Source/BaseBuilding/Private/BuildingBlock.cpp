@@ -7,6 +7,8 @@
 #include "GameFramework/PlayerState.h"
 #include "Net/UnrealNetwork.h"
 #include "TimerManager.h"
+//#include "Kismet/GameplayStatics.h"
+#include "Kismet/GameplayStatics.h"
 
 int64 ABuildingBlock::NextCreationOrder = 1;
 
@@ -32,6 +34,72 @@ ABuildingBlock::ABuildingBlock()
 void ABuildingBlock::BeginPlay()
 {
 	Super::BeginPlay();
+	UE_LOG(LogTemp, Warning,
+	   TEXT("BUILDING BLOCK INSTANCE:"
+			" Name=%s"
+			" | Class=%s"
+			" | NetMode=%d"
+			" | Authority=%d"
+			" | LocalRole=%d"
+			" | RemoteRole=%d"
+			" | Replicates=%d"
+			" | Level=%s"
+			" | World=%s"),
+
+	   *GetName(),
+	   *GetClass()->GetName(),
+	   static_cast<int32>(GetNetMode()),
+	   HasAuthority(),
+	   static_cast<int32>(GetLocalRole()),
+	   static_cast<int32>(GetRemoteRole()),
+	   GetIsReplicated(),
+	   GetLevel() ? *GetLevel()->GetName() : TEXT("NULL"),
+	   *GetWorld()->GetName()
+   );
+
+	int32 TotalActors = 0;
+	int32 BuildingBlocksFound = 0;
+
+	for (TActorIterator<AActor> It(GetWorld()); It; ++It)
+	{
+		AActor* Actor = *It;
+		if (!IsValid(Actor))
+		{
+			continue;
+		}
+
+		TotalActors++;
+
+		if (Actor->IsA(ABuildingBlock::StaticClass()))
+		{
+			BuildingBlocksFound++;
+
+			UE_LOG(LogTemp, Warning,
+				TEXT("BLOCK DISCOVERY: Found %s | Class=%s"),
+				*Actor->GetName(),
+				*Actor->GetClass()->GetName());
+		}
+	}
+
+	UE_LOG(LogTemp, Warning,
+		TEXT("BLOCK DISCOVERY SUMMARY: Actors=%d | BuildingBlocks=%d"),
+		TotalActors,
+		BuildingBlocksFound);
+	
+	TArray<AActor*> FoundActors;
+
+	UGameplayStatics::GetAllActorsOfClass(
+		GetWorld(),
+		ABuildingBlock::StaticClass(),
+		FoundActors);
+
+	UE_LOG(LogTemp, Warning,
+			TEXT("BLDComponent: World=%s | NetMode=%d | Found=%d "),
+			*GetWorld()->GetName(),
+			static_cast<int32>(GetWorld()->GetNetMode()),
+			FoundActors.Num()
+		);
+	
 	RefreshTerritoryRadius();
 
 	if (HasAuthority())
@@ -44,6 +112,14 @@ void ABuildingBlock::BeginPlay()
 		GetWorldTimerManager().SetTimer(UpkeepTimerHandle, this, &ABuildingBlock::CheckUpkeepClock, 1.f, true);
 		RecalculateUpkeepRequirements();
 	}
+	
+	UE_LOG(LogTemp, Warning,
+	TEXT("BUILDING BLOCK READY: %s | World=%s | NetMode=%d | Authority=%d"),
+	*GetName(),
+	*GetWorld()->GetName(),
+	static_cast<int32>(GetWorld()->GetNetMode()),
+	HasAuthority()
+);
 }
 
 void ABuildingBlock::EndPlay(const EEndPlayReason::Type EndPlayReason)
@@ -67,6 +143,13 @@ void ABuildingBlock::EndPlay(const EEndPlayReason::Type EndPlayReason)
 			OtherBlock->RecalculateUpkeepRequirements();
 		}
 	}
+	UE_LOG(LogTemp, Warning,
+	TEXT("BUILDING BLOCK END PLAY: %s | World=%s | NetMode=%d"),
+	*GetName(),
+	*GetWorld()->GetName(),
+	static_cast<int32>(GetWorld()->GetNetMode())
+);
+	
 	Super::EndPlay(EndPlayReason);
 }
 
@@ -76,8 +159,8 @@ void ABuildingBlock::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLi
 	DOREPLIFETIME(ABuildingBlock, TerritoryRadius);
 	DOREPLIFETIME(ABuildingBlock, BuildingOwner);
 	DOREPLIFETIME(ABuildingBlock, CreationOrder);
-	DOREPLIFETIME(ABuildingBlock, RequiredUpkeepPerDay);
-	DOREPLIFETIME(ABuildingBlock, StoredMaterials);
+	DOREPLIFETIME(ABuildingBlock, ReplicatedRequiredUpkeep);
+	DOREPLIFETIME(ABuildingBlock, ReplicatedStoredMaterials);
 	DOREPLIFETIME(ABuildingBlock, LastUpkeepGameTime);
 	DOREPLIFETIME(ABuildingBlock, bUpkeepPaidForCurrentPeriod);
 }
@@ -137,19 +220,46 @@ TArray<ABuildingBlock*> ABuildingBlock::GetOverlappingBuildingBlocks() const
 	return Result;
 }
 
-ABuildingBlock* ABuildingBlock::GetControllingBlockAtLocation(UWorld* World, const FVector& Location)
+ABuildingBlock* ABuildingBlock::GetControllingBlockAtLocation(
+	UWorld* World,
+	const FVector& Location)
 {
-	if (!World) return nullptr;
-	ABuildingBlock* OldestBlock = nullptr;
-	for (TActorIterator<ABuildingBlock> It(World); It; ++It)
+	if (!World)
 	{
-		ABuildingBlock* Candidate = *It;
-		if (!IsValid(Candidate) || Candidate->IsActorBeingDestroyed() || !Candidate->IsLocationInsideRadius(Location)) continue;
-		if (!OldestBlock || Candidate->CreationOrder < OldestBlock->CreationOrder)
+		UE_LOG(LogTemp, Log, TEXT("Block: world not valid"));
+		return nullptr;
+	}
+
+	TArray<AActor*> FoundActors;
+
+	UGameplayStatics::GetAllActorsOfClass(
+		World,
+		ABuildingBlock::StaticClass(),
+		FoundActors);
+	UE_LOG(LogTemp, Warning,
+			TEXT("getcontrollingblock: GET ALL ACTORS OF CLASS: Found=%d"),
+			FoundActors.Num());
+	ABuildingBlock* OldestBlock = nullptr;
+
+	for (AActor* Actor : FoundActors)
+	{UE_LOG(LogTemp, Log, TEXT("Block: Inside founcactors loop"));
+	
+		ABuildingBlock* Candidate = Cast<ABuildingBlock>(Actor);
+
+		if (!IsValid(Candidate) ||
+			Candidate->IsActorBeingDestroyed() ||
+			!Candidate->IsLocationInsideRadius(Location))
+		{
+			continue;
+		}
+
+		if (!OldestBlock ||
+			Candidate->GetCreationOrder() < OldestBlock->GetCreationOrder())
 		{
 			OldestBlock = Candidate;
 		}
 	}
+
 	return OldestBlock;
 }
 
@@ -163,28 +273,44 @@ bool ABuildingBlock::IsLocationOwnedBy(UWorld* World, const FVector& Location, c
 void ABuildingBlock::RecalculateUpkeepRequirements()
 {
 	if (!HasAuthority() || !GetWorld()) return;
-
+	UE_LOG(LogTemp, Log, TEXT("RecalculateUpkeepRequirements entered"));
 	RequiredUpkeepPerDay.Reset();
 	for (TActorIterator<ABLDStructure> It(GetWorld()); It; ++It)
 	{
 		ABLDStructure* Structure = *It;
+		if (!IsValid(Structure))
+		{
+			UE_LOG(LogTemp, Error, TEXT("Invalid structure"));
+		}
+		if (!IsValid(Structure->GetOwningBuildingBlock()))
+		{
+			UE_LOG(LogTemp, Log, TEXT("Owning building block is valid"));
+		}
+		if (Structure->GetOwningBuildingBlock() != this)
+		{
+			UE_LOG(LogTemp, Log, TEXT("Building block not this(valid)"));
+		}
 		if (!IsValid(Structure) || Structure->IsActorBeingDestroyed() || Structure->GetOwningBuildingBlock() != this || !Structure->IsBuilt()) continue;
-
+		UE_LOG(LogTemp, Log, TEXT("recalculat: passed first condition"));
 		FName Resource = NAME_None;
 		float Amount = 0.f;
 		if (Structure->GetUpkeepRequirement(Resource, Amount) && !Resource.IsNone() && Amount > 0.f)
 		{
+			UE_LOG(LogTemp, Log, TEXT("Calculated the req resource"));
 			RequiredUpkeepPerDay.FindOrAdd(Resource) += Amount;
 		}
 	}
-	ForceNetUpdate();
+	SyncReplicatedUpkeepData();
+	//ForceNetUpdate();
+	
 }
 
 bool ABuildingBlock::AddStoredMaterial(FName Resource, float Amount)
 {
 	if (!HasAuthority() || Resource.IsNone() || Amount <= 0.f) return false;
 	StoredMaterials.FindOrAdd(Resource) += Amount;
-	ForceNetUpdate();
+	SyncReplicatedUpkeepData();
+	//ForceNetUpdate();
 	return true;
 }
 
@@ -195,7 +321,8 @@ float ABuildingBlock::GetStoredMaterial(FName Resource) const
 }
 
 void ABuildingBlock::CheckUpkeepClock()
-{
+{UE_LOG(LogTemp, Log, TEXT("CheckUpkeepClock"));
+
 	if (!HasAuthority() || !GetWorld() || GameSecondsPerDay <= 0.f) return;
 	const float CurrentGameTime = GetWorld()->GetTimeSeconds();
 	while (CurrentGameTime - LastUpkeepGameTime >= GameSecondsPerDay)
@@ -210,19 +337,26 @@ void ABuildingBlock::ProcessUpkeepDay()
 {
 	if (!HasAuthority()) return;
 	RecalculateUpkeepRequirements();
-
+	UE_LOG(LogTemp, Log, TEXT("ProcessUpkeepDay"));
 	bool bCanPay = true;
 	for (const TPair<FName, float>& Requirement : RequiredUpkeepPerDay)
 	{
+		UE_LOG(LogTemp, Log, TEXT("inside upkeep checl loop"));
 		if (GetStoredMaterial(Requirement.Key) + KINDA_SMALL_NUMBER < Requirement.Value)
 		{
+			UE_LOG(LogTemp, Log, TEXT("set cant pay"));
 			bCanPay = false;
 			break;
+		}
+		else
+		{
+			UE_LOG(LogTemp, Log, TEXT("Eghiter can pay or is invalid"));
 		}
 	}
 
 	if (bCanPay)
 	{
+		UE_LOG(LogTemp, Log, TEXT("can pay"));
 		for (const TPair<FName, float>& Requirement : RequiredUpkeepPerDay)
 		{
 			float& Stored = StoredMaterials.FindOrAdd(Requirement.Key);
@@ -232,14 +366,17 @@ void ABuildingBlock::ProcessUpkeepDay()
 	}
 	else
 	{
+		UE_LOG(LogTemp, Log, TEXT("cant pay"));
 		bUpkeepPaidForCurrentPeriod = false;
 		ApplyDecayToStructures();
 	}
-	ForceNetUpdate();
+	SyncReplicatedUpkeepData();
+	//ForceNetUpdate();
 }
 
 void ABuildingBlock::ApplyDecayToStructures()
 {
+	UE_LOG(LogTemp, Log, TEXT("Apply decay reached"));
 	if (!HasAuthority() || !GetWorld()) return;
 	TArray<ABLDStructure*> StructuresToDecay;
 	for (TActorIterator<ABLDStructure> It(GetWorld()); It; ++It)
@@ -266,10 +403,52 @@ void ABuildingBlock::DestroyStructure(ABLDStructure* Structure)
 
 void ABuildingBlock::OnRep_UpkeepData()
 {
-	// UI-facing Blueprint can observe the replicated maps and payment state.
+	RequiredUpkeepPerDay.Reset();
+	StoredMaterials.Reset();
+
+	for (const FBuildingBlockResourceEntry& Entry : ReplicatedRequiredUpkeep)
+	{
+		RequiredUpkeepPerDay.Add(Entry.Resource, Entry.Amount);
+	}
+
+	for (const FBuildingBlockResourceEntry& Entry : ReplicatedStoredMaterials)
+	{
+		StoredMaterials.Add(Entry.Resource, Entry.Amount);
+	}
 }
 
 void ABuildingBlock::OnRep_TerritoryRadius()
 {
 	RefreshTerritoryRadius();
+}
+
+void ABuildingBlock::SyncReplicatedUpkeepData()
+{
+	if (!HasAuthority())
+	{
+		return;
+	}
+
+	ReplicatedRequiredUpkeep.Reset();
+	ReplicatedStoredMaterials.Reset();
+
+	for (const TPair<FName, float>& Entry : RequiredUpkeepPerDay)
+	{
+		FBuildingBlockResourceEntry& NewEntry =
+			ReplicatedRequiredUpkeep.AddDefaulted_GetRef();
+
+		NewEntry.Resource = Entry.Key;
+		NewEntry.Amount = Entry.Value;
+	}
+
+	for (const TPair<FName, float>& Entry : StoredMaterials)
+	{
+		FBuildingBlockResourceEntry& NewEntry =
+			ReplicatedStoredMaterials.AddDefaulted_GetRef();
+
+		NewEntry.Resource = Entry.Key;
+		NewEntry.Amount = Entry.Value;
+	}
+
+	ForceNetUpdate();
 }

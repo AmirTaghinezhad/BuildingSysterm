@@ -9,6 +9,19 @@ class UStaticMeshComponent;
 class APlayerState;
 class ABLDStructure;
 
+
+USTRUCT()
+struct FBuildingBlockResourceEntry
+{
+	GENERATED_BODY()
+
+	UPROPERTY()
+	FName Resource = NAME_None;
+
+	UPROPERTY()
+	float Amount = 0.f;
+};
+
 UCLASS(Blueprintable)
 class BASEBUILDING_API ABuildingBlock : public AActor
 {
@@ -70,24 +83,29 @@ protected:
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Building Block")
 	TObjectPtr<UStaticMeshComponent> BlockMesh;
-
+	
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Building Block")
 	TObjectPtr<USphereComponent> TerritorySphere;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, ReplicatedUsing=OnRep_TerritoryRadius, Category="Building Block", meta=(ClampMin="100.0"))
 	float TerritoryRadius = 1500.f;
 
+	// Replicated representations of the upkeep maps.
+	UPROPERTY(VisibleInstanceOnly, ReplicatedUsing=OnRep_UpkeepData, Category="Upkeep")
+	TArray<FBuildingBlockResourceEntry> ReplicatedRequiredUpkeep;
+
+	UPROPERTY(VisibleInstanceOnly, ReplicatedUsing=OnRep_UpkeepData, Category="Upkeep")
+	TArray<FBuildingBlockResourceEntry> ReplicatedStoredMaterials;
+
+	// Server-side maps used by the upkeep calculations.
+	TMap<FName, float> RequiredUpkeepPerDay;
+	TMap<FName, float> StoredMaterials;
+
 	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Replicated, Category="Building Block")
 	TObjectPtr<APlayerState> BuildingOwner;
 
 	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Replicated, Category="Building Block")
 	int64 CreationOrder = 0;
-
-	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, ReplicatedUsing=OnRep_UpkeepData, Category="Upkeep")
-	TMap<FName, float> RequiredUpkeepPerDay;
-
-	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, ReplicatedUsing=OnRep_UpkeepData, Category="Upkeep")
-	TMap<FName, float> StoredMaterials;
 
 	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Replicated, Category="Upkeep")
 	float LastUpkeepGameTime = 0.f;
@@ -97,6 +115,8 @@ protected:
 
 	UFUNCTION()
 	void OnRep_UpkeepData();
+	
+	void SyncReplicatedUpkeepData();
 
 	UFUNCTION()
 	void OnRep_TerritoryRadius();

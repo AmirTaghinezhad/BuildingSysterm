@@ -50,8 +50,14 @@ void ABLDStructure::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLif
 void ABLDStructure::InitializeBuiltStructure(UDataTable* InDataTable, APlayerState* InOwner, ABuildingBlock* InBlock)
 {
 	if (!HasAuthority()) return;
+	UE_LOG(LogTemp, Log, TEXT("InitializeBuiltStructure"));
 	BuildingDataTable = InDataTable;
 	BuildingOwner = InOwner;
+	if (IsValid(InBlock))
+	{
+		UE_LOG(LogTemp, Log, TEXT("InBlock"));
+	}
+	
 	OwningBuildingBlock = InBlock;
 	bIsbuilt = true;
 	bCanBuild = true;
@@ -144,7 +150,15 @@ void ABLDStructure::ApplyUpkeepDecay(float PercentageOfMaxHealth)
 void ABLDStructure::UpgradeStructure(UDataTable* DataTable)
 {
 	if (!HasAuthority() || !bIsbuilt) return;
-	UDataTable* SourceTable = DataTable ? DataTable : BuildingDataTable;
+	UDataTable* SourceTable;
+	if (DataTable)
+	{
+		SourceTable = DataTable;
+	}
+	else
+	{
+		SourceTable = BuildingDataTable;
+	}
 	if (!SourceTable) return;
 	const FBuildingInfo* CurrentData = SourceTable->FindRow<FBuildingInfo>(StructureName, TEXT("UpgradeStructure"));
 	if (!CurrentData || CurrentData->NextLevelStructureRowName.IsNone()) return;

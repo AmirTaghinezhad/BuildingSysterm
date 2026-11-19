@@ -10,6 +10,7 @@
 #include "Engine/DataTable.h"
 #include "Engine/World.h"
 #include "TimerManager.h"
+#include "Kismet/GameplayStatics.h"
 
 UBLDComponet::UBLDComponet()
 {
@@ -22,6 +23,77 @@ void UBLDComponet::BeginPlay()
 	Super::BeginPlay();
 	PlayerRefrence = Cast<ACharacter>(GetOwner());
 	if (!PlayerRefrence) UE_LOG(LogTemp, Error, TEXT("Player Reference is NULL!"));
+	if (GetOwner() && GetOwner()->HasAuthority())
+	{
+		FindBuildingBlockWhenReady();
+	}
+}
+
+ABuildingBlock* UBLDComponet::GetControllingBuildingBlockAtLocation(
+	const FVector& Location
+) const
+{
+	if (!GetWorld())
+	{
+		UE_LOG(LogTemp, Error,
+			TEXT("BLDComponent: GetWorld() returned NULL"));
+
+		return nullptr;
+	}
+
+	TArray<AActor*> FoundActors;
+
+	// Use this component as the world context.
+	UGameplayStatics::GetAllActorsOfClass(
+		this,
+		ABuildingBlock::StaticClass(),
+		FoundActors
+	);
+
+	UE_LOG(LogTemp, Warning,
+		TEXT("BLDComponent: World=%s | NetMode=%d | Found=%d | Location=%s"),
+		*GetWorld()->GetName(),
+		static_cast<int32>(GetWorld()->GetNetMode()),
+		FoundActors.Num(),
+		*Location.ToString()
+	);
+
+	ABuildingBlock* OldestBlock = nullptr;
+
+	for (AActor* Actor : FoundActors)
+	{
+		ABuildingBlock* Candidate = Cast<ABuildingBlock>(Actor);
+
+		if (!IsValid(Candidate) || Candidate->IsActorBeingDestroyed())
+		{
+			continue;
+		}
+
+		if (!Candidate->IsLocationInsideRadius(Location))
+		{
+			continue;
+		}
+
+		if (!OldestBlock ||
+			Candidate->GetCreationOrder() < OldestBlock->GetCreationOrder())
+		{
+			OldestBlock = Candidate;
+		}
+	}
+
+	if (OldestBlock)
+	{
+		UE_LOG(LogTemp, Warning,
+			TEXT("BLDComponent: Controlling block found: %s"),
+			*OldestBlock->GetName());
+	}
+	else
+	{
+		UE_LOG(LogTemp, Warning,
+			TEXT("BLDComponent: No controlling block found."));
+	}
+
+	return OldestBlock;
 }
 
 void UBLDComponet::TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction)
@@ -143,7 +215,7 @@ void UBLDComponet::ServerBuildStructure_Implementation(TSubclassOf<ABLDStructure
 	}
 	if (!bClassAllowed) return;
 
-	ABuildingBlock* ControllingBlock = ABuildingBlock::GetControllingBlockAtLocation(GetWorld(), RequestedTransform.GetLocation());
+	ABuildingBlock* ControllingBlock =GetControllingBuildingBlockAtLocation(RequestedTransform.GetLocation());
 	// Outside all claims is allowed. Inside a claim, only its controlling block's owner may build.
 	if (ControllingBlock && ControllingBlock->GetBuildingOwner() != RequestingPlayer) return;
 
@@ -161,7 +233,12 @@ void UBLDComponet::ServerBuildStructure_Implementation(TSubclassOf<ABLDStructure
 		NewStructure->Destroy();
 		return;
 	}
-
+	if (ControllingBlock)
+	{
+		float rad = ControllingBlock->GetTerritoryRadius();
+		UE_LOG(LogTemp, Log, TEXT("build block rad is %f"), rad);
+	}
+	UE_LOG(LogTemp, Log, TEXT("Structure constructions called"));
 	NewStructure->InitializeBuiltStructure(StructureDataTable, RequestingPlayer, ControllingBlock);
 	NewStructure->OnStructureBuilt();
 }
@@ -233,4 +310,40 @@ void UBLDComponet::GetRefund_Implementation() {}
 void UBLDComponet::StopGhost_Comp()
 {
 	if (BuildGhost) BuildGhost->StopGhost();
+}
+
+void UBLDComponet::FindBuildingBlockWhenReady()
+{
+	if (!GetWorld())
+	{
+		return;
+	}
+
+	TArray<AActor*> FoundActors;
+
+	UGameplayStatics::GetAllActorsOfClass(
+		this,
+		ABuildingBlock::StaticClass(),
+		FoundActors
+	);
+
+	UE_LOG(LogTemp, Warning,
+		TEXT("BUILDING BLOCK SEARCH: NetMode=%d | Found=%d"),
+		static_cast<int32>(GetWorld()->GetNetMode()),
+		FoundActors.Num()
+	);
+
+	if (FoundActors.Num() == 0)
+	{
+		// Retry on the next tick.
+		GetWorld()->GetTimerManager().SetTimerForNextTick(
+			this,
+			&UBLDComponet::FindBuildingBlockWhenReady
+		);
+
+		return;
+	}
+
+	UE_LOG(LogTemp, Warning,
+		TEXT("BUILDING BLOCK SEARCH SUCCESS"));
 }

@@ -75,6 +75,10 @@ protected:
 
 	UFUNCTION(Server, Reliable)
 	void ServerDemolishStructure(ABLDStructure* Structure);
+	
+	ABuildingBlock* GetControllingBuildingBlockAtLocation(const FVector& Location) const;
+	void FindBuildingBlockWhenReady();
+	
 
 	bool bDoOnce = true;
 	FTimerHandle MainTraceCycleHandle;
