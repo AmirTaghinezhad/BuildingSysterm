@@ -114,4 +114,10 @@ public:
 
 	UFUNCTION(BlueprintNativeEvent) void GetRefund();
 	UFUNCTION(BlueprintCallable) void Demolish();
+	UFUNCTION(BlueprintCallable, Category="Building")
+	void PlaceBuildingBlock(TSubclassOf<ABuildingBlock> BlockClass, FTransform Transform);
+
+	UFUNCTION(Server, Reliable)
+	void ServerPlaceBuildingBlock(TSubclassOf<ABuildingBlock> BlockClass, FTransform Transform);
+	
 };

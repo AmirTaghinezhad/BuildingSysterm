@@ -347,3 +347,22 @@ void UBLDComponet::FindBuildingBlockWhenReady()
 	UE_LOG(LogTemp, Warning,
 		TEXT("BUILDING BLOCK SEARCH SUCCESS"));
 }
+
+void UBLDComponet::PlaceBuildingBlock(TSubclassOf<ABuildingBlock> BlockClass, FTransform Transform)
+{
+	ServerPlaceBuildingBlock(BlockClass, Transform); // never SpawnActor on the client
+}
+
+void UBLDComponet::ServerPlaceBuildingBlock_Implementation(TSubclassOf<ABuildingBlock> BlockClass, FTransform Transform)
+{
+	if (!GetOwner() || !GetOwner()->HasAuthority() || !BlockClass || !GetWorld()) return;
+	APlayerState* Player = PlayerRefrence ? PlayerRefrence->GetPlayerState() : nullptr;
+	if (!Player) return;
+	if (FVector::DistSquared(PlayerRefrence->GetActorLocation(), Transform.GetLocation()) > FMath::Square(1000.f)) return;
+	// Optional: reject if the location is already inside another player's claim.
+
+	FActorSpawnParameters Params;
+	Params.Owner = GetOwner();
+	ABuildingBlock* Block = GetWorld()->SpawnActor<ABuildingBlock>(BlockClass, Transform, Params);
+	if (Block) Block->InitializeBuildingBlock(Player);
+}
